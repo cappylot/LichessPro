@@ -1,0 +1,82 @@
+name: Release
+
+# Builds the desktop installers. macOS and Windows binaries can only be
+# produced on their own runners, which is the whole reason this exists.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch: # so a build can be produced without cutting a tag
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+
+  build:
+    needs: test
+    strategy:
+      fail-fast: false # one platform failing should not hide the other's result
+      matrix:
+        include:
+          - os: macos-latest
+            target: --mac
+            artifact: macos
+          - os: windows-latest
+            target: --win
+            artifact: windows
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: Build installer
+        run: npx electron-builder ${{ matrix.target }} --publish never
+        env:
+          # Signing is optional. Without a certificate electron-builder must be
+          # told not to go looking for one, or the macOS build fails instead of
+          # producing an unsigned app.
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ secrets.CSC_LINK != '' }}
+          # Notarisation, also optional; skipped unless all three are set.
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lichesspro-${{ matrix.artifact }}
+          path: |
+            dist/*.dmg
+            dist/*.exe
+          if-no-files-found: error
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.dmg
+            dist/*.exe
+          draft: true
+          body: |
+            Download the installer for your system below.
+
+            **macOS** — unsigned builds are blocked on first open. Right-click
+            the app and choose Open, then confirm.
+            **Windows** — SmartScreen may warn about an unrecognised app.
+            Choose More info, then Run anyway.

@@ -1,0 +1,59 @@
+# ---- Secrets & runtime state -------------------------------------------------
+# .data/ holds match state INCLUDING Lichess OAuth access tokens. Never commit.
+.data/
+*.pem
+*.key
+.env
+.env.*
+!.env.example
+
+# ---- Node --------------------------------------------------------------------
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.npm/
+.node_repl_history
+*.tgz
+.yarn/
+.pnp.*
+
+# ---- Build output ------------------------------------------------------------
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# ---- Test / coverage ---------------------------------------------------------
+coverage/
+.nyc_output/
+*.lcov
+
+# ---- Logs --------------------------------------------------------------------
+logs/
+*.log
+
+# ---- Caches ------------------------------------------------------------------
+.cache/
+.tmp/
+tmp/
+.eslintcache
+
+# ---- Editors -----------------------------------------------------------------
+.vscode/
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*~
+
+# ---- OS ----------------------------------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
