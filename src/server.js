@@ -7,6 +7,7 @@ import { describeTokenProblem, expiryWarning, tokenCreateUrl } from './auth.js';
 import { config } from './config.js';
 import { LichessClient, LichessError, createPkcePair, randomToken } from './lichess.js';
 import { logger } from './log.js';
+import { bothSeatsFilled, seatForOAuth, seatForToken, seatOf } from './seating.js';
 import { Store, publicView } from './store.js';
 import { describeSpec, normaliseSpec } from './timecontrol.js';
 
@@ -91,17 +92,6 @@ function clientIdFor(req, res) {
   return fresh;
 }
 
-function seatOf(match, clientId) {
-  for (const key of ['a', 'b']) {
-    if (match.seats[key]?.clientId === clientId) return key;
-  }
-  return null;
-}
-
-function firstEmptySeat(match) {
-  return !match.seats.a ? 'a' : !match.seats.b ? 'b' : null;
-}
-
 /**
  * Fill a seat with an authorised Lichess account.
  * @returns {'same-account'|null} a refusal reason, or null on success
@@ -159,16 +149,12 @@ function createMatch({ spec, rated, color }) {
   return store.put(match);
 }
 
-function bothSeatsFilled(match) {
-  return Boolean(match.seats.a?.token && match.seats.b?.token);
-}
-
 /**
  * Create the challenge as seat A, accept it as seat B, then hand the game to
  * the arbiter. The game id equals the challenge id.
  */
 async function startGame(match) {
-  if (!bothSeatsFilled(match)) throw new HttpError(409, 'Both players must sign in with Lichess first');
+  if (!bothSeatsFilled(match)) throw new HttpError(409, 'Both players must be seated before the game can start');
   if (match.gameId) throw new HttpError(409, 'This match already has a game');
 
   const [a, b] = [match.seats.a, match.seats.b];
@@ -302,8 +288,9 @@ async function handleApi(req, res, url) {
       return sendJson(res, 200, matchPayload(match, clientId));
     }
 
-    // Claim a seat with a pasted personal access token, for when the app is
-    // not reachable from the other player's browser and OAuth cannot round-trip.
+    // Seat the opponent from a pasted personal access token. This is the only
+    // way seat 'b' is filled: OAuth would require the app to be reachable from
+    // the opponent's browser, which it generally is not.
     if (req.method === 'POST' && action === 'token') {
       if (match.gameId) throw new HttpError(409, 'This match already has a game');
 
@@ -311,10 +298,8 @@ async function handleApi(req, res, url) {
       const token = typeof body.token === 'string' ? body.token.trim() : '';
       if (!token) throw new HttpError(400, 'Paste a Lichess API token first');
 
-      // Always the first EMPTY seat: the host pasting their opponent's token
-      // must not overwrite their own.
-      const seat = firstEmptySeat(match);
-      if (!seat) throw new HttpError(409, 'Both seats in this match are already taken');
+      const { seat, error: seatError } = seatForToken(match);
+      if (seatError) throw new HttpError(409, seatError);
 
       let info;
       try {
@@ -336,7 +321,7 @@ async function handleApi(req, res, url) {
       if (claimSeat(match, seat, { token, account, clientId }) === 'same-account') {
         throw new HttpError(
           409,
-          'Both seats must be different Lichess accounts. Time can only be added to an opponent, so each player needs the other to authorise the app.',
+          'That token belongs to your own Lichess account. Time can only be added to an opponent, so the two seats must be different accounts — paste the token your opponent generated.',
         );
       }
 
@@ -407,10 +392,8 @@ function handleLogin(req, res, url) {
   const matchId = url.searchParams.get('match');
   const match = requireMatch(matchId);
 
-  // Reuse the seat this browser already holds (re-authenticating), else take a
-  // free one.
-  const seat = seatOf(match, clientId) ?? firstEmptySeat(match);
-  if (!seat) throw new HttpError(409, 'Both seats in this match are already taken');
+  const { seat, error: seatError } = seatForOAuth(match, clientId);
+  if (seatError) throw new HttpError(409, seatError);
 
   const { verifier, challenge } = createPkcePair();
   const state = randomToken(24);

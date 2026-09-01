@@ -20,33 +20,42 @@ only the arbiter standing next to the board.
 ## How it works
 
 ```
-  Player A browser ─┐                            ┌─ streams game state ──┐
-                    ├─ OAuth (PKCE) ─► LichessPro ─┤                       ▼
-  Player B browser ─┘                  (arbiter)  └─ POST add-time ──► lichess.org
-                                                                          │
-                            both players play in the normal Lichess UI ◄───┘
+   host's browser ── OAuth (PKCE) ──┐        ┌─ streams game state ──┐
+                                    ├ LichessPro                     ▼
+  opponent's token ── pasted in ────┘ (arbiter) ─ POST add-time ► lichess.org
+                                                                     │
+                       both players play in the normal Lichess UI ◄───┘
 ```
 
-1. Player A creates a match and signs in with Lichess.
-2. Player A sends the match link to Player B, who signs in with their own account.
-   (Or, if B cannot reach the app at all, B sends A an API token to paste —
-   see [Playing without a public URL](#playing-without-a-public-url).)
-3. Either player hits **Create the game**. LichessPro creates the challenge as A
-   and auto-accepts it as B, so nobody has to click a popup within the 20-second
-   challenge expiry.
+Only the **host** runs the app, and only the host opens it in a browser.
+
+1. The host creates a match and signs in with Lichess.
+2. The host sends their opponent a link that opens Lichess's token page with the
+   right permissions pre-selected. The opponent creates a token and sends it
+   back; the host pastes it in. The opponent never opens this app.
+3. The host hits **Create the game**. LichessPro creates the challenge as the
+   host and auto-accepts it with the opponent's token, so nobody has to click a
+   popup within the 20-second challenge expiry.
 4. The arbiter opens the Board API game stream and counts half-moves.
 5. When a player completes the control move, the arbiter delivers their bonus and
    verifies it landed on the clock.
 
-### Why both players must authorise the app
+### Why two accounts must authorise the app
 
 The Lichess add-time endpoint adds seconds to the **opponent's** clock — you can
 never give time to yourself. To give White 30 minutes the app must call the API
-with **Black's** token, and vice versa. One token is not enough; each player must
-sign in.
+with **Black's** token, and vice versa. One token is not enough.
+
+The two credentials arrive by different routes because their owners are in
+different positions: the host is at the machine running the app, so they can
+complete an OAuth redirect; the opponent generally cannot reach it at all, so
+they hand over a token instead.
 
 The app refuses two seats claimed by the same Lichess account, since that
-configuration cannot work.
+configuration cannot work. The seats are also pinned by route — the host's
+sign-in always fills the challenger seat and a pasted token always fills the
+opponent seat — so the roles, and the colour choice that follows them, cannot be
+inverted by doing the two steps in the other order.
 
 ---
 
@@ -115,10 +124,11 @@ cd LichessPro
 npm start
 ```
 
-Then open <http://localhost:8080>.
+Then open <http://localhost:8080>. `localhost` is enough — the app does not need
+to be reachable by anyone else.
 
-**Only the host needs Node.** The opponent needs a browser and a Lichess account
-and nothing else, on any platform.
+**Only the host needs Node.** The opponent needs a Lichess account and a browser
+to create one token, on any platform.
 
 ### Configuration
 
@@ -130,9 +140,10 @@ PORT=8080
 PUBLIC_URL=https://chess.example.com
 ```
 
-`PUBLIC_URL` must exactly match the address players type, because it builds the
-OAuth `redirect_uri`. Real environment variables override the file if you prefer
-to set them that way:
+`PUBLIC_URL` must exactly match the address **you** open the app at, because it
+builds the OAuth `redirect_uri` for your own sign-in. The default is right for
+`localhost`; change it only if you serve the app from somewhere else. Real
+environment variables override the file if you prefer to set them that way:
 
 ```bash
 PUBLIC_URL=https://chess.example.com npm start   # macOS / Linux only
@@ -140,28 +151,29 @@ PUBLIC_URL=https://chess.example.com npm start   # macOS / Linux only
 
 There is no Lichess app registration step — Lichess accepts any `client_id`.
 
-### Playing without a public URL
+### Seating your opponent
 
-Signing in with Lichess needs the app to be reachable by both players' browsers,
-because the OAuth redirect has to come back to it. If you would rather not expose
-anything — no tunnel, no port forwarding, just `localhost` — use the token path
-instead:
+Your opponent is seated with a Lichess API token, not by signing in. This is the
+only way, and it is why the app needs no public URL: an OAuth redirect would have
+to come back to a machine they can reach, and generally they cannot reach yours.
 
-1. On the match page, open **"Or add a player with an API token"**.
-2. Send your opponent the Lichess link shown there. It opens the token form with
-   `challenge:write` and `board:play` already ticked, so they cannot pick the
-   wrong permissions.
-3. They create the token and send it to you privately. You paste it in.
+Step 2 of the match page walks through it:
+
+1. **Copy message for your opponent** puts ready-made instructions on your
+   clipboard, including a Lichess link with `challenge:write` and `board:play`
+   already ticked so they cannot pick the wrong permissions.
+2. They click Create and send you the token privately.
+3. You paste it in. Their name appears and the match is ready.
 4. After the game they revoke it at *Preferences → API access tokens*.
 
-The app checks the token's scopes and expiry with `POST /api/token/test` before
-accepting it, so a wrongly-scoped token is rejected immediately rather than
-failing at move 40.
+The token's scopes and expiry are checked with `POST /api/token/test` before the
+seat is filled, so a wrongly-scoped token is rejected there and then rather than
+failing at move 40. A token that expires within six hours raises a warning, since
+a classical game can outlast it.
 
 > **This hands over a credential.** Whoever holds that token can play moves and
 > resign games on that account until it is revoked. Only do this with someone who
-> trusts you, over a private channel, and revoke it afterwards. The OAuth flow
-> exists precisely so this is not necessary — prefer it when you can.
+> trusts you, send it over a private channel, and revoke it afterwards.
 
 ### Tests
 
@@ -218,9 +230,9 @@ regardless, and delete it when you are done.
   but a player who completes move 40 with seconds left and whose opponent replies
   instantly will briefly see less than the full bonus. Lower
   `ADD_TIME_INTERVAL_MS` to shorten the window, at the cost of more 429s.
-- **Both players must keep their Lichess accounts authorised** for the whole game.
-  Revoking the app — or a pasted token expiring — mid-game stops the arbiter from
-  paying that player's opponent.
+- **Both credentials must stay valid** for the whole game. If your opponent
+  revokes their token, or it expires mid-game, the arbiter can no longer pay
+  *you* your bonus — their token is the one that adds time to your clock.
 - **The app must stay running for the whole game.** It is the arbiter; if it is
   down at move 40, the bonus is late (it is paid on reconnect, not skipped).
 - **Rated games work**, but consider whether a game whose clock is manipulated by
@@ -239,12 +251,14 @@ regardless, and delete it when you are done.
 src/
   timecontrol.js  pure spec validation, ply arithmetic, 60s chunking   (unit tested)
   arbiter.js      the engine: watch the game, deliver and verify bonuses
-  auth.js         token scope/expiry vetting for the paste-a-token path (unit tested)
+  auth.js         token scope/expiry vetting for the pasted token          (unit tested)
+  seating.js      which seat each route may claim                          (unit tested)
   lichess.js      API client: OAuth PKCE, challenges, stream, add-time
   ndjson.js       ndjson stream parsing with keep-alive detection      (unit tested)
   store.js        match persistence (tokens, delivery progress)
   server.js       HTTP routes, SSE, OAuth callback, static files
-public/           single-page front end, no framework
+public/           single-page front end, no framework: builds once per phase
+                  and patches in place, so a live game does not re-render
 test/             unit tests + a fake Lichess that reproduces the clamp
 ```
 

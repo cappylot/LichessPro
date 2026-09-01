@@ -42,6 +42,7 @@ export class FakeLichess {
       status: 'started',
     };
     this.addTimeCalls = [];
+    this.challenges = [];
     this.streams = new Set();
     this.rateLimitNext = 0; // answer 429 for the next N add-time calls
   }
@@ -118,6 +119,27 @@ export class FakeLichess {
       const info = this.accounts[token];
       if (!info) return this.#json(res, 401, { error: 'no such token' });
       return this.#json(res, 200, { id: info.userId, username: info.username, title: info.title ?? null });
+    }
+
+    // Challenge creation: the game id equals the challenge id on Lichess.
+    const challengeMatch = url.pathname.match(/^\/api\/challenge\/([^/]+)$/);
+    if (req.method === 'POST' && challengeMatch) {
+      if (!this.tokens[token]) return this.#json(res, 401, { error: 'no such token' });
+      const chunks = [];
+      req.on('data', (c) => chunks.push(c));
+      req.on('end', () => {
+        const params = new URLSearchParams(Buffer.concat(chunks).toString('utf8'));
+        this.challenges.push({ from: this.tokens[token], to: challengeMatch[1], params: Object.fromEntries(params) });
+        this.#json(res, 200, { id: this.gameId, url: `http://lichess.test/${this.gameId}` });
+      });
+      return undefined;
+    }
+
+    const acceptMatch = url.pathname.match(/^\/api\/challenge\/([^/]+)\/(accept|cancel)$/);
+    if (req.method === 'POST' && acceptMatch) {
+      if (!this.tokens[token]) return this.#json(res, 401, { error: 'no such token' });
+      this.challenges.push({ action: acceptMatch[2], by: this.tokens[token] });
+      return this.#json(res, 200, { ok: true });
     }
 
     const streamMatch = url.pathname.match(/^\/api\/board\/game\/stream\/(.+)$/);

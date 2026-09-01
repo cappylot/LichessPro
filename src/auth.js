@@ -1,9 +1,10 @@
 /**
- * Token vetting for the "paste a personal access token" flow.
+ * Token vetting for the opponent's pasted access token.
  *
- * This exists so two people can play without the app being reachable from the
- * internet: instead of each player completing an OAuth redirect, one of them
- * pastes a token the other generated at lichess.org.
+ * This is how the second seat is always filled. The host completes an OAuth
+ * redirect because they are at the machine running the app; their opponent
+ * generally cannot reach it at all, so they generate a token at lichess.org and
+ * hand it over instead. That is what keeps the app runnable on plain localhost.
  *
  * The scope check matters more than it looks. A token missing `challenge:write`
  * streams the game perfectly and then fails at move 40, three hours in, which is
