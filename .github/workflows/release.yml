@@ -52,14 +52,24 @@ jobs:
           # so its null check passes, it resolves "" as a certificate path
           # against the project directory, and dies with "<projectDir> not a
           # file". Unset them instead, so signing is genuinely skipped.
+          EXTRA=""
           if [ -z "${CSC_LINK:-}" ]; then
             unset CSC_LINK CSC_KEY_PASSWORD
             export CSC_IDENTITY_AUTO_DISCOVERY=false
+            # Without a certificate electron-builder skips signing ENTIRELY --
+            # its schema is explicit that "there is no automatic ad-hoc
+            # fallback". An unsigned arm64 binary cannot execute on Apple
+            # Silicon at all, so opt into ad-hoc signing. This does not avoid
+            # Gatekeeper (that needs notarisation); it makes the app runnable
+            # once the user allows it.
+            if [ "${{ runner.os }}" = "macOS" ]; then
+              EXTRA="--config.mac.identity=-"
+            fi
           fi
           if [ -z "${APPLE_ID:-}" ]; then
             unset APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID
           fi
-          npx electron-builder ${{ matrix.target }} --publish never
+          npx electron-builder ${{ matrix.target }} --publish never $EXTRA
         env:
           # Signing and notarisation are optional; each block above drops these
           # entirely unless a real value was supplied.
@@ -88,7 +98,11 @@ jobs:
           body: |
             Download the installer for your system below.
 
-            **macOS** — unsigned builds are blocked on first open. Right-click
-            the app and choose Open, then confirm.
+            **macOS** — these builds are not notarised, so the first open is
+            blocked with "Apple could not verify this app is free of malware".
+            Open it once, then go to System Settings → Privacy & Security and
+            click **Open Anyway** next to the message. (On macOS 15 and later
+            the old right-click → Open shortcut no longer works.)
+
             **Windows** — SmartScreen may warn about an unrecognised app.
             Choose More info, then Run anyway.

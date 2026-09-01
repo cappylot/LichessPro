@@ -121,15 +121,22 @@ Download the installer for your system from the
 no terminal, no URL to remember. The app opens its own window and puts a knight
 in your menu bar / system tray while a game is running.
 
-- **macOS** — the build is unsigned, so the first open is blocked. **Right-click
-  the app and choose Open**, then confirm. After that it launches normally.
+- **macOS** — the build is not notarised, so the first open is blocked with
+  *"Apple could not verify LichessPro is free of malware"*. Try to open it once,
+  then go to **System Settings → Privacy & Security**, scroll to Security, and
+  click **Open Anyway** next to the message. On macOS 15 and later the old
+  right-click → Open shortcut no longer works.
+  Equivalently, from a terminal: `xattr -dr com.apple.quarantine /Applications/LichessPro.app`
 - **Windows** — SmartScreen may warn about an unrecognised app. Choose **More
   info**, then **Run anyway**.
 
-Those warnings are what an unsigned app looks like; they are not a sign anything
-is wrong. Removing them needs an Apple Developer account (~$99/yr) and a Windows
-certificate. The release workflow will sign automatically if those secrets are
-added to the repository.
+Those warnings are what an app without a paid signing identity looks like; they
+are not a sign anything is wrong. **Only notarisation removes the macOS one**,
+and that needs an Apple Developer account (~$99/yr) — ad-hoc signing, which
+these builds do use, is what lets the app run on Apple Silicon at all, but it
+does not satisfy Gatekeeper. The release workflow signs and notarises
+automatically if `CSC_LINK` and the `APPLE_*` secrets are added to the
+repository.
 
 **Closing the window does not stop the arbiter** — that is deliberate, since a
 classical game runs for hours. Quit from the tray menu when the game is over. If
