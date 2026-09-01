@@ -1,0 +1,24 @@
+{
+  "name": "lichesspro",
+  "version": "1.0.0",
+  "description": "Play Lichess games with multi-period (FIDE-style) time controls by injecting bonus time through the Lichess API.",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "keywords": [
+    "chess",
+    "lichess",
+    "time-control",
+    "fide",
+    "arbiter"
+  ],
+  "license": "MIT"
+}
