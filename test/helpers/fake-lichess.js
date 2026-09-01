@@ -15,8 +15,23 @@ import http from 'node:http';
  * updated clocks) whenever moretime is given.
  */
 export class FakeLichess {
-  constructor({ tokens, gameId = 'testgame', wtime = 5_400_000, btime = 5_400_000, plies = 0 }) {
+  constructor({ tokens, accounts, gameId = 'testgame', wtime = 5_400_000, btime = 5_400_000, plies = 0 }) {
     this.tokens = tokens; // token -> 'white' | 'black'
+    // token -> { userId, username, scopes, expires }, for /api/token/test and
+    // /api/account. Defaults to fully-scoped accounts matching `tokens`.
+    this.accounts =
+      accounts ??
+      Object.fromEntries(
+        Object.entries(tokens).map(([token, color]) => [
+          token,
+          {
+            userId: color === 'white' ? 'alice' : 'bob',
+            username: color === 'white' ? 'Alice' : 'Bob',
+            scopes: 'challenge:write,board:play',
+            expires: null,
+          },
+        ]),
+      );
     this.gameId = gameId;
     this.state = {
       moves: Array.from({ length: plies }, (_, i) => (i % 2 === 0 ? 'e2e4' : 'e7e5')),
@@ -85,6 +100,25 @@ export class FakeLichess {
   #route(req, res) {
     const url = new URL(req.url, 'http://127.0.0.1');
     const token = (req.headers.authorization ?? '').replace('Bearer ', '');
+
+    if (req.method === 'POST' && url.pathname === '/api/token/test') {
+      const chunks = [];
+      req.on('data', (c) => chunks.push(c));
+      req.on('end', () => {
+        const pasted = Buffer.concat(chunks).toString('utf8').trim();
+        const info = this.accounts[pasted];
+        this.#json(res, 200, {
+          [pasted]: info ? { userId: info.userId, scopes: info.scopes, expires: info.expires } : null,
+        });
+      });
+      return undefined;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/account') {
+      const info = this.accounts[token];
+      if (!info) return this.#json(res, 401, { error: 'no such token' });
+      return this.#json(res, 200, { id: info.userId, username: info.username, title: info.title ?? null });
+    }
 
     const streamMatch = url.pathname.match(/^\/api\/board\/game\/stream\/(.+)$/);
     if (req.method === 'GET' && streamMatch) {

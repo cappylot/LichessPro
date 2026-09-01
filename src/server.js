@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Arbiter } from './arbiter.js';
+import { describeTokenProblem, expiryWarning, tokenCreateUrl } from './auth.js';
 import { config } from './config.js';
 import { LichessClient, LichessError, createPkcePair, randomToken } from './lichess.js';
 import { logger } from './log.js';
@@ -95,6 +96,41 @@ function seatOf(match, clientId) {
     if (match.seats[key]?.clientId === clientId) return key;
   }
   return null;
+}
+
+function firstEmptySeat(match) {
+  return !match.seats.a ? 'a' : !match.seats.b ? 'b' : null;
+}
+
+/**
+ * Fill a seat with an authorised Lichess account.
+ * @returns {'same-account'|null} a refusal reason, or null on success
+ */
+function claimSeat(match, seat, { token, account, clientId }) {
+  // Guard against one person filling both seats, which would make the whole
+  // exercise pointless: you cannot add time to your own clock.
+  const otherSeat = seat === 'a' ? 'b' : 'a';
+  if (match.seats[otherSeat]?.userId === account.id) return 'same-account';
+
+  match.seats[seat] = {
+    token,
+    userId: account.id,
+    username: account.username,
+    title: account.title ?? null,
+    clientId,
+    joinedAt: new Date().toISOString(),
+  };
+  if (bothSeatsFilled(match) && match.status === 'awaiting-players') match.status = 'ready';
+  store.touch(match.id);
+  return null;
+}
+
+function matchPayload(match, clientId) {
+  return {
+    match: publicView(match),
+    you: seatOf(match, clientId),
+    tokenCreateUrl: tokenCreateUrl(config.lichessHost),
+  };
 }
 
 function requireMatch(id) {
@@ -253,7 +289,7 @@ async function handleApi(req, res, url) {
     const action = segments[3];
 
     if (req.method === 'GET' && !action) {
-      return sendJson(res, 200, { match: publicView(match), you: seatOf(match, clientId) });
+      return sendJson(res, 200, matchPayload(match, clientId));
     }
 
     if (req.method === 'GET' && action === 'stream') {
@@ -263,7 +299,49 @@ async function handleApi(req, res, url) {
     if (req.method === 'POST' && action === 'start') {
       if (!seatOf(match, clientId)) throw new HttpError(403, 'Only a player in this match can start it');
       await startGame(match);
-      return sendJson(res, 200, { match: publicView(match) });
+      return sendJson(res, 200, matchPayload(match, clientId));
+    }
+
+    // Claim a seat with a pasted personal access token, for when the app is
+    // not reachable from the other player's browser and OAuth cannot round-trip.
+    if (req.method === 'POST' && action === 'token') {
+      if (match.gameId) throw new HttpError(409, 'This match already has a game');
+
+      const body = await readJsonBody(req);
+      const token = typeof body.token === 'string' ? body.token.trim() : '';
+      if (!token) throw new HttpError(400, 'Paste a Lichess API token first');
+
+      // Always the first EMPTY seat: the host pasting their opponent's token
+      // must not overwrite their own.
+      const seat = firstEmptySeat(match);
+      if (!seat) throw new HttpError(409, 'Both seats in this match are already taken');
+
+      let info;
+      try {
+        info = await client.testToken(token);
+      } catch (err) {
+        throw new HttpError(502, `Could not check that token with Lichess: ${describeLichessError(err)}`);
+      }
+
+      const problem = describeTokenProblem(info);
+      if (problem) throw new HttpError(400, problem);
+
+      let account;
+      try {
+        account = await client.account(token);
+      } catch (err) {
+        throw new HttpError(502, `Could not read that account from Lichess: ${describeLichessError(err)}`);
+      }
+
+      if (claimSeat(match, seat, { token, account, clientId }) === 'same-account') {
+        throw new HttpError(
+          409,
+          'Both seats must be different Lichess accounts. Time can only be added to an opponent, so each player needs the other to authorise the app.',
+        );
+      }
+
+      log.info(`Match ${match.id}: seat ${seat} claimed by ${account.username} via pasted token`);
+      return sendJson(res, 200, { ...matchPayload(match, clientId), warning: expiryWarning(info) });
     }
 
     if (req.method === 'POST' && action === 'topup') {
@@ -305,7 +383,7 @@ function streamMatch(req, res, match, clientId) {
   const push = () => {
     const current = store.get(match.id);
     if (!current) return;
-    res.write(`data: ${JSON.stringify({ match: publicView(current), you: seatOf(current, clientId) })}\n\n`);
+    res.write(`data: ${JSON.stringify(matchPayload(current, clientId))}\n\n`);
   };
 
   const onChange = (id) => {
@@ -329,9 +407,9 @@ function handleLogin(req, res, url) {
   const matchId = url.searchParams.get('match');
   const match = requireMatch(matchId);
 
-  // Reuse the seat this browser already holds, otherwise take a free one.
-  let seat = seatOf(match, clientId);
-  if (!seat) seat = !match.seats.a ? 'a' : !match.seats.b ? 'b' : null;
+  // Reuse the seat this browser already holds (re-authenticating), else take a
+  // free one.
+  const seat = seatOf(match, clientId) ?? firstEmptySeat(match);
   if (!seat) throw new HttpError(409, 'Both seats in this match are already taken');
 
   const { verifier, challenge } = createPkcePair();
@@ -370,23 +448,8 @@ async function handleCallback(req, res, url) {
     throw new HttpError(502, `Lichess sign-in failed: ${describeLichessError(err)}`);
   }
 
-  // Guard against one person filling both seats, which would make the whole
-  // exercise pointless: you cannot add time to your own clock.
-  const otherSeat = pending.seat === 'a' ? 'b' : 'a';
-  if (match.seats[otherSeat]?.userId === account.id) {
-    return redirect(res, `/m/${match.id}?error=${encodeURIComponent('same-account')}`);
-  }
-
-  match.seats[pending.seat] = {
-    token,
-    userId: account.id,
-    username: account.username,
-    title: account.title ?? null,
-    clientId: pending.clientId,
-    joinedAt: new Date().toISOString(),
-  };
-  if (bothSeatsFilled(match) && match.status === 'awaiting-players') match.status = 'ready';
-  store.touch(match.id);
+  const refusal = claimSeat(match, pending.seat, { token, account, clientId: pending.clientId });
+  if (refusal) return redirect(res, `/m/${match.id}?error=${encodeURIComponent(refusal)}`);
 
   log.info(`Match ${match.id}: seat ${pending.seat} claimed by ${account.username}`);
   redirect(res, `/m/${match.id}`);

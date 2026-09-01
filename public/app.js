@@ -189,6 +189,68 @@ function seatCard(match, seatKey, you, onSignIn) {
   );
 }
 
+/**
+ * Fallback for when the app is not reachable from the other player's browser:
+ * they generate a Lichess API token and you paste it here. Avoids needing a
+ * tunnel or a public URL just to complete an OAuth redirect.
+ */
+function tokenPasteCard(match, createUrl) {
+  const input = el('input', {
+    type: 'password',
+    placeholder: 'lip_...',
+    autocomplete: 'off',
+    spellcheck: false,
+  });
+  const submit = el('button', { className: 'secondary', textContent: 'Add player from token' });
+  const feedback = el('div');
+
+  submit.addEventListener('click', async () => {
+    clear(feedback);
+    const token = input.value.trim();
+    if (!token) return;
+    submit.disabled = true;
+    try {
+      const result = await api(`/api/matches/${match.id}/token`, {
+        method: 'POST',
+        body: JSON.stringify({ token }),
+      });
+      input.value = ''; // never leave a credential sitting in the DOM
+      if (result.warning) feedback.append(el('div', { className: 'notice', textContent: result.warning }));
+    } catch (err) {
+      feedback.append(el('div', { className: 'notice bad', textContent: err.message }));
+    } finally {
+      submit.disabled = false;
+    }
+  });
+
+  return el(
+    'details',
+    {},
+    el('summary', { textContent: 'Or add a player with an API token (no public URL needed)' }),
+    el('p', { className: 'muted' }, 'Use this when your opponent cannot open this page — for example when it is only running on your own machine.'),
+    el(
+      'ol',
+      { className: 'muted', style: 'padding-left:20px' },
+      el(
+        'li',
+        {},
+        'Send them ',
+        el('a', { href: createUrl, target: '_blank', rel: 'noopener', textContent: 'this Lichess link' }),
+        ', which pre-selects the two permissions needed. They click Create and copy the token.',
+      ),
+      el('li', {}, 'They send you the token privately. Paste it below.'),
+      el('li', {}, 'Once the game is over they should revoke it at lichess.org → Preferences → API access tokens.'),
+    ),
+    el('div', {
+      className: 'notice',
+      textContent:
+        'A token is a credential: whoever holds it can play moves and resign games on that account until it is revoked. Only do this with someone you trust, and send it over a private channel.',
+    }),
+    el('div', { className: 'row' }, input, submit),
+    feedback,
+  );
+}
+
 function deliveriesTable(match) {
   const rows = Object.entries(match.deliveries);
   if (rows.length === 0) {
@@ -299,7 +361,7 @@ function eventLog(match) {
 }
 
 function renderMatch(state) {
-  const { match, you } = state;
+  const { match, you, tokenCreateUrl } = state;
   const shareUrl = `${window.location.origin}/m/${match.id}`;
   const bothIn = Boolean(match.seats.a && match.seats.b);
 
@@ -367,6 +429,7 @@ function renderMatch(state) {
       el('h2', { style: 'margin-top:20px', textContent: 'Invite your opponent' }),
       el('p', { className: 'muted', style: 'margin-top:0' }, 'Send this link. They open it and sign in with their own Lichess account.'),
       el('div', { className: 'share' }, input, copy),
+      tokenPasteCard(match, tokenCreateUrl),
     );
   }
   nodes.push(playersCard);

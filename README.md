@@ -29,6 +29,8 @@ only the arbiter standing next to the board.
 
 1. Player A creates a match and signs in with Lichess.
 2. Player A sends the match link to Player B, who signs in with their own account.
+   (Or, if B cannot reach the app at all, B sends A an API token to paste —
+   see [Playing without a public URL](#playing-without-a-public-url).)
 3. Either player hits **Create the game**. LichessPro creates the challenge as A
    and auto-accepts it as B, so nobody has to click a popup within the 20-second
    challenge expiry.
@@ -124,6 +126,29 @@ PUBLIC_URL=https://chess.example.com PORT=8080 npm start
 Copy `.env.example` to `.env` for the full list of settings. There is no Lichess
 app registration step — Lichess accepts any `client_id`.
 
+### Playing without a public URL
+
+Signing in with Lichess needs the app to be reachable by both players' browsers,
+because the OAuth redirect has to come back to it. If you would rather not expose
+anything — no tunnel, no port forwarding, just `localhost` — use the token path
+instead:
+
+1. On the match page, open **"Or add a player with an API token"**.
+2. Send your opponent the Lichess link shown there. It opens the token form with
+   `challenge:write` and `board:play` already ticked, so they cannot pick the
+   wrong permissions.
+3. They create the token and send it to you privately. You paste it in.
+4. After the game they revoke it at *Preferences → API access tokens*.
+
+The app checks the token's scopes and expiry with `POST /api/token/test` before
+accepting it, so a wrongly-scoped token is rejected immediately rather than
+failing at move 40.
+
+> **This hands over a credential.** Whoever holds that token can play moves and
+> resign games on that account until it is revoked. Only do this with someone who
+> trusts you, over a private channel, and revoke it afterwards. The OAuth flow
+> exists precisely so this is not necessary — prefer it when you can.
+
 ### Tests
 
 ```bash
@@ -177,7 +202,8 @@ cookie that proves seat ownership and nothing else.
   instantly will briefly see less than the full bonus. Lower
   `ADD_TIME_INTERVAL_MS` to shorten the window, at the cost of more 429s.
 - **Both players must keep their Lichess accounts authorised** for the whole game.
-  Revoking the app mid-game stops the arbiter from paying that player's opponent.
+  Revoking the app — or a pasted token expiring — mid-game stops the arbiter from
+  paying that player's opponent.
 - **The app must stay running for the whole game.** It is the arbiter; if it is
   down at move 40, the bonus is late (it is paid on reconnect, not skipped).
 - **Rated games work**, but consider whether a game whose clock is manipulated by
@@ -196,6 +222,7 @@ cookie that proves seat ownership and nothing else.
 src/
   timecontrol.js  pure spec validation, ply arithmetic, 60s chunking   (unit tested)
   arbiter.js      the engine: watch the game, deliver and verify bonuses
+  auth.js         token scope/expiry vetting for the paste-a-token path (unit tested)
   lichess.js      API client: OAuth PKCE, challenges, stream, add-time
   ndjson.js       ndjson stream parsing with keep-alive detection      (unit tested)
   store.js        match persistence (tokens, delivery progress)

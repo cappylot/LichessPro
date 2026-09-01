@@ -56,7 +56,7 @@ export class LichessClient {
     return url.toString();
   }
 
-  async #request(path, { token, method = 'GET', form, signal, stream = false } = {}) {
+  async #request(path, { token, method = 'GET', form, text, signal, stream = false } = {}) {
     const headers = { Accept: stream ? 'application/x-ndjson' : 'application/json' };
     if (token) headers.Authorization = `Bearer ${token}`;
 
@@ -64,6 +64,9 @@ export class LichessClient {
     if (form) {
       headers['Content-Type'] = 'application/x-www-form-urlencoded';
       body = new URLSearchParams(form).toString();
+    } else if (text !== undefined) {
+      headers['Content-Type'] = 'text/plain';
+      body = text;
     }
 
     const res = await this.fetch(`${this.host}${path}`, { method, headers, body, signal });
@@ -93,6 +96,19 @@ export class LichessClient {
       },
     });
     return res.json();
+  }
+
+  /**
+   * Inspect a token without using it: returns `{ userId, scopes, expires }`,
+   * or null if Lichess does not recognise it.
+   *
+   * Unauthenticated, so a token pasted with the wrong permissions is caught
+   * here rather than at move 40 when the add-time call is refused.
+   */
+  async testToken(token) {
+    const res = await this.#request('/api/token/test', { method: 'POST', text: token });
+    const body = await res.json();
+    return body?.[token] ?? null;
   }
 
   async revokeToken(token) {
