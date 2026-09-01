@@ -159,9 +159,9 @@ to come back to a machine they can reach, and generally they cannot reach yours.
 
 Step 2 of the match page walks through it:
 
-1. **Copy message for your opponent** puts ready-made instructions on your
-   clipboard, including a Lichess link with `challenge:write` and `board:play`
-   already ticked so they cannot pick the wrong permissions.
+1. **Copy link** puts a Lichess link on your clipboard — nothing else — with
+   `challenge:write` and `board:play` already ticked, so they cannot pick the
+   wrong permissions. Send it however you normally talk to them.
 2. They click Create and send you the token privately.
 3. You paste it in. Their name appears and the match is ready.
 4. After the game they revoke it at *Preferences → API access tokens*.

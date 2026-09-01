@@ -343,22 +343,6 @@ function playerRow(seat, badge, role) {
 // Match page — step 2: the opponent
 // ---------------------------------------------------------------------------
 
-function opponentMessage(specLabel, createUrl) {
-  return [
-    `Fancy a game? ${specLabel} on Lichess.`,
-    '',
-    'I am running an arbiter app that adds the bonus time automatically, and it needs a',
-    'Lichess API token from you to do that:',
-    '',
-    `1. Open this link: ${createUrl}`,
-    '2. The two permissions it needs are already ticked. Click "Create".',
-    '3. Send me the token it shows (it starts with lip_).',
-    '',
-    'It only lets the app follow our game and add time to your clock. You can revoke it',
-    'afterwards at lichess.org -> Preferences -> API access tokens.',
-  ].join('\n');
-}
-
 function buildOpponentStep(matchId) {
   const body = el('div');
   let key = null;
@@ -419,12 +403,19 @@ function buildOpponentStep(matchId) {
         return;
       }
 
-      const link = el('a', {
-        className: 'btn secondary',
-        href: tokenCreateUrl,
-        target: '_blank',
-        rel: 'noopener',
-        textContent: 'Open the Lichess token page ↗',
+      const linkField = el('input', {
+        className: 'token-input',
+        type: 'text',
+        id: 'token-link',
+        readOnly: true,
+        value: tokenCreateUrl,
+      });
+      // Select the whole URL on focus, so it can still be copied by hand if the
+      // clipboard API is unavailable — as it is on some non-secure origins, and
+      // this app normally runs on plain http://localhost.
+      linkField.addEventListener('focus', () => {
+        linkField.select();
+        linkField.scrollLeft = 0; // keep the domain in view, not the query string
       });
 
       fill(
@@ -434,25 +425,30 @@ function buildOpponentStep(matchId) {
           textContent: 'Your opponent generates a token and sends it to you. They never need to open this app.',
         }),
         el(
-          'ol',
-          { className: 'steps-inline' },
+          'div',
+          { className: 'field' },
+          el('label', { className: 'label', htmlFor: 'token-link', textContent: '1 · Send your opponent this link' }),
           el(
-            'li',
-            {},
-            'Send them the instructions — ',
-            copyButton('Copy message for your opponent', () => opponentMessage(match.specLabel, tokenCreateUrl), {
-              className: 'btn ghost sm',
-            }),
+            'div',
+            { className: 'token-entry' },
+            linkField,
+            copyButton('Copy link', () => tokenCreateUrl, { className: 'btn secondary' }),
           ),
-          el('li', {}, 'They open the link, click Create, and copy the token. ', link),
-          el('li', {}, 'Paste it here.'),
+          el('p', {
+            className: 'hint sub',
+            textContent:
+              'It opens the Lichess token page with both required permissions already ticked. They press Create and send you the token it shows.',
+          }),
         ),
         el(
           'div',
-          { className: 'token-entry' },
-          el('label', { className: 'sr-only', htmlFor: 'opponent-token', textContent: "Opponent's API token" }),
-          input,
-          submit,
+          { className: 'field' },
+          el('label', {
+            className: 'label',
+            htmlFor: 'opponent-token',
+            textContent: '2 · Paste the token they send back',
+          }),
+          el('div', { className: 'token-entry' }, input, submit),
         ),
         feedback,
         el('p', {
