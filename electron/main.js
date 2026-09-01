@@ -117,10 +117,36 @@ function applyNavigationRule(target) {
   });
 }
 
+/**
+ * Tray icons differ per platform, and getting it wrong is very visible.
+ *
+ * macOS wants a 22pt TEMPLATE image — black plus alpha, which the system
+ * recolours to match a light or dark menu bar. Electron picks up the @2x file
+ * beside it automatically. Handing it an oversized bitmap makes the icon render
+ * at that many points, dwarfing the menu bar.
+ *
+ * Windows and Linux have no template concept, so the same black glyph would be
+ * invisible on a dark taskbar. They get the brand green instead, and Windows
+ * gets an .ico carrying 16px and 32px so it stays crisp at any DPI.
+ */
+function trayImage() {
+  if (process.platform === 'darwin') {
+    const image = nativeImage.createFromPath(asset('trayTemplate.png'));
+    image.setTemplateImage(true);
+    return image;
+  }
+  if (process.platform === 'win32') {
+    // Prefer the .ico so Windows can pick a crisp size per DPI, but never let a
+    // decode failure leave the tray blank — that would hide the only way back
+    // into the app once the window is closed.
+    const ico = nativeImage.createFromPath(asset('tray.ico'));
+    if (!ico.isEmpty()) return ico;
+  }
+  return nativeImage.createFromPath(asset('tray.png'));
+}
+
 function createTray() {
-  const image = nativeImage.createFromPath(asset('trayTemplate.png'));
-  image.setTemplateImage(true); // follows the macOS menu bar in light and dark
-  tray = new Tray(image);
+  tray = new Tray(trayImage());
   tray.setToolTip('LichessPro — arbiter running');
   tray.setContextMenu(
     Menu.buildFromTemplate([
