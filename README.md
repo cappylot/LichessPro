@@ -20,14 +20,14 @@ only the arbiter standing next to the board.
 ## How it works
 
 ```
-   host's browser ── OAuth (PKCE) ──┐        ┌─ streams game state ──┐
+   host signs in ── OAuth (PKCE) ───┐        ┌─ streams game state ──┐
                                     ├ LichessPro                     ▼
-  opponent's token ── pasted in ────┘ (arbiter) ─ POST add-time ► lichess.org
+  opponent's token ── pasted in ────┘  (the app) ─ POST add-time ► lichess.org
                                                                      │
                        both players play in the normal Lichess UI ◄───┘
 ```
 
-Only the **host** runs the app, and only the host opens it in a browser.
+Only the **host** runs the app. Their opponent installs nothing.
 
 1. The host creates a match and signs in with Lichess.
 2. The host sends their opponent a link that opens Lichess's token page with the
@@ -112,42 +112,70 @@ Everything below was checked against the
 
 ---
 
-## Running it
+## Getting it
 
-Requires **Node.js 20+** on the machine that hosts it. There are **no
-dependencies** — nothing to `npm install`. Works the same on Windows, macOS and
-Linux.
+### The app (recommended)
+
+Download the installer for your system from the
+[releases page](../../releases), open it, and that is the whole setup. No Node,
+no terminal, no URL to remember. The app opens its own window and puts a knight
+in your menu bar / system tray while a game is running.
+
+- **macOS** — the build is unsigned, so the first open is blocked. **Right-click
+  the app and choose Open**, then confirm. After that it launches normally.
+- **Windows** — SmartScreen may warn about an unrecognised app. Choose **More
+  info**, then **Run anyway**.
+
+Those warnings are what an unsigned app looks like; they are not a sign anything
+is wrong. Removing them needs an Apple Developer account (~$99/yr) and a Windows
+certificate. The release workflow will sign automatically if those secrets are
+added to the repository.
+
+**Closing the window does not stop the arbiter** — that is deliberate, since a
+classical game runs for hours. Quit from the tray menu when the game is over. If
+you try to quit mid-game the app tells you what is still owed and asks first.
+
+Match data, including both players' access tokens, lives in the app's per-user
+folder (`~/Library/Application Support/LichessPro` on macOS,
+`%APPDATA%\LichessPro` on Windows).
+
+### From source
+
+Requires **Node.js 20+**. There are **no runtime dependencies**.
 
 ```bash
 git clone <this repo>
 cd LichessPro
-npm start
+npm start          # terminal server, as before
 ```
 
-Then open <http://localhost:8080>. `localhost` is enough — the app does not need
-to be reachable by anyone else.
+Then open <http://localhost:8080>. To run the desktop shell from source instead:
 
-**Only the host needs Node.** The opponent needs a Lichess account and a browser
-to create one token, on any platform.
+```bash
+npm install        # Electron, for development only
+npm run app
+```
 
-### Configuration
+And to build installers yourself — note each platform can only build its own:
+
+```bash
+npm run dist:mac   # on a Mac
+npm run dist:win   # on Windows
+```
+
+### Configuration (source only)
 
 Copy `.env.example` to `.env` and edit it. The file is read at startup on every
 platform, so there is no need for shell-specific environment variable syntax:
 
 ```ini
 PORT=8080
-PUBLIC_URL=https://chess.example.com
+PUBLIC_URL=http://localhost:8080
 ```
 
 `PUBLIC_URL` must exactly match the address **you** open the app at, because it
-builds the OAuth `redirect_uri` for your own sign-in. The default is right for
-`localhost`; change it only if you serve the app from somewhere else. Real
-environment variables override the file if you prefer to set them that way:
-
-```bash
-PUBLIC_URL=https://chess.example.com npm start   # macOS / Linux only
-```
+builds the OAuth `redirect_uri` for your own sign-in. The desktop app ignores all
+of this: it picks a free port at startup and derives the rest.
 
 There is no Lichess app registration step — Lichess accepts any `client_id`.
 
@@ -248,7 +276,10 @@ regardless, and delete it when you are done.
 ## Project layout
 
 ```
+electron/
+  main.js         desktop shell: tray, window, quit guard, external links
 src/
+  cli.js          terminal entry point (`npm start`)
   timecontrol.js  pure spec validation, ply arithmetic, 60s chunking   (unit tested)
   arbiter.js      the engine: watch the game, deliver and verify bonuses
   auth.js         token scope/expiry vetting for the pasted token          (unit tested)
@@ -256,7 +287,7 @@ src/
   lichess.js      API client: OAuth PKCE, challenges, stream, add-time
   ndjson.js       ndjson stream parsing with keep-alive detection      (unit tested)
   store.js        match persistence (tokens, delivery progress)
-  server.js       HTTP routes, SSE, OAuth callback, static files
+  server.js       startServer(): routes, SSE, OAuth callback, static files
 public/           single-page front end, no framework: builds once per phase
                   and patches in place, so a live game does not re-render
 test/             unit tests + a fake Lichess that reproduces the clamp

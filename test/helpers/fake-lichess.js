@@ -43,6 +43,8 @@ export class FakeLichess {
     };
     this.addTimeCalls = [];
     this.challenges = [];
+    this.tokenExchanges = [];
+    this.grantToken = 'lip_alice'; // token handed back by the OAuth code exchange
     this.streams = new Set();
     this.rateLimitNext = 0; // answer 429 for the next N add-time calls
   }
@@ -101,6 +103,19 @@ export class FakeLichess {
   #route(req, res) {
     const url = new URL(req.url, 'http://127.0.0.1');
     const token = (req.headers.authorization ?? '').replace('Bearer ', '');
+
+    // OAuth2 code exchange. Any code is accepted; the point under test is the
+    // redirect_uri round trip and which cookie ends up owning the seat.
+    if (req.method === 'POST' && url.pathname === '/api/token') {
+      const chunks = [];
+      req.on('data', (c) => chunks.push(c));
+      req.on('end', () => {
+        const form = new URLSearchParams(Buffer.concat(chunks).toString('utf8'));
+        this.tokenExchanges.push(Object.fromEntries(form));
+        this.#json(res, 200, { token_type: 'Bearer', access_token: this.grantToken, expires_in: 31_536_000 });
+      });
+      return undefined;
+    }
 
     if (req.method === 'POST' && url.pathname === '/api/token/test') {
       const chunks = [];

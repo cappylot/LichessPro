@@ -2,15 +2,20 @@
   "name": "lichesspro",
   "version": "1.0.0",
   "description": "Play Lichess games with multi-period (FIDE-style) time controls by injecting bonus time through the Lichess API.",
+  "author": "LichessPro contributors",
   "type": "module",
   "private": true,
   "engines": {
     "node": ">=20.0.0"
   },
-  "main": "src/server.js",
+  "main": "electron/main.js",
   "scripts": {
-    "start": "node src/server.js",
-    "dev": "node --watch src/server.js",
+    "start": "node src/cli.js",
+    "dev": "node --watch src/cli.js",
+    "app": "electron .",
+    "dist": "electron-builder",
+    "dist:mac": "electron-builder --mac",
+    "dist:win": "electron-builder --win",
     "test": "node --test \"test/*.test.js\""
   },
   "keywords": [
@@ -20,5 +25,59 @@
     "fide",
     "arbiter"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^44.1.1",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "org.lichesspro.arbiter",
+    "productName": "LichessPro",
+    "copyright": "MIT",
+    "directories": {
+      "output": "dist",
+      "buildResources": "electron/assets"
+    },
+    "files": [
+      "electron/**/*",
+      "src/**/*",
+      "public/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        }
+      ],
+      "category": "public.app-category.games",
+      "icon": "electron/assets/icon.png"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "electron/assets/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Game",
+      "icon": "electron/assets/icon.png"
+    }
+  }
 }
