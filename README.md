@@ -133,10 +133,40 @@ in your menu bar / system tray while a game is running.
 Those warnings are what an app without a paid signing identity looks like; they
 are not a sign anything is wrong. **Only notarisation removes the macOS one**,
 and that needs an Apple Developer account (~$99/yr) — ad-hoc signing, which
-these builds do use, is what lets the app run on Apple Silicon at all, but it
-does not satisfy Gatekeeper. The release workflow signs and notarises
-automatically if `CSC_LINK` and the `APPLE_*` secrets are added to the
-repository.
+these builds use by default, is what lets the app run on Apple Silicon at all,
+but it does not satisfy Gatekeeper.
+
+<details>
+<summary>Signing and notarising with an Apple Developer account</summary>
+
+Add these repository secrets (Settings → Secrets and variables → Actions) and the
+release workflow signs and notarises on its own — no code change:
+
+| Secret | Where it comes from |
+| --- | --- |
+| `CSC_LINK` | your **Developer ID Application** certificate exported from Keychain Access as `.p12`, then base64: `base64 -i cert.p12 \| pbcopy` |
+| `CSC_KEY_PASSWORD` | the password you set when exporting the `.p12` |
+| `APPLE_ID` | your Apple ID email |
+| `APPLE_APP_SPECIFIC_PASSWORD` | appleid.apple.com → Sign-In and Security → App-Specific Passwords |
+| `APPLE_TEAM_ID` | developer.apple.com → Membership (10 characters) |
+
+It must be a **Developer ID Application** certificate. "Apple Development" and
+"Apple Distribution" are for Xcode and the App Store and will not satisfy
+Gatekeeper for a direct download.
+
+With `CSC_LINK` present the workflow stops passing `--config.mac.identity=-`, so
+electron-builder signs with the real certificate instead of ad hoc, and
+notarisation runs automatically once the three `APPLE_*` values are set. Expect
+the macOS job to take several minutes longer while Apple processes it.
+
+Verify a build afterwards with:
+
+```bash
+spctl -a -vvv -t install /Applications/LichessPro.app
+# accepted / source=Notarized Developer ID
+```
+
+</details>
 
 **Closing the window does not stop the arbiter** — that is deliberate, since a
 classical game runs for hours. Quit from the tray menu when the game is over. If

@@ -54,8 +54,7 @@
         }
       ],
       "category": "public.app-category.games",
-      "icon": "electron/assets/icon.png",
-      "hardenedRuntime": false
+      "icon": "electron/assets/icon.png"
     },
     "win": {
       "target": [

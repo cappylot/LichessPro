@@ -62,6 +62,11 @@ jobs:
             # Silicon at all, so opt into ad-hoc signing. This does not avoid
             # Gatekeeper (that needs notarisation); it makes the app runnable
             # once the user allows it.
+            #
+            # Hardened runtime stays ON in both paths: notarisation requires it,
+            # and electron-builder's default entitlements already grant
+            # com.apple.security.cs.disable-library-validation, which is what
+            # lets ad-hoc signing coexist with it.
             if [ "${{ runner.os }}" = "macOS" ]; then
               EXTRA="--config.mac.identity=-"
             fi
