@@ -44,15 +44,27 @@ jobs:
       - run: npm ci
 
       - name: Build installer
-        run: npx electron-builder ${{ matrix.target }} --publish never
+        shell: bash
+        run: |
+          # An EMPTY signing variable is worse than an absent one. A repository
+          # without these secrets still defines them as "", and electron-builder
+          # keeps empty strings on purpose ("allow to specify as empty string"),
+          # so its null check passes, it resolves "" as a certificate path
+          # against the project directory, and dies with "<projectDir> not a
+          # file". Unset them instead, so signing is genuinely skipped.
+          if [ -z "${CSC_LINK:-}" ]; then
+            unset CSC_LINK CSC_KEY_PASSWORD
+            export CSC_IDENTITY_AUTO_DISCOVERY=false
+          fi
+          if [ -z "${APPLE_ID:-}" ]; then
+            unset APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID
+          fi
+          npx electron-builder ${{ matrix.target }} --publish never
         env:
-          # Signing is optional. Without a certificate electron-builder must be
-          # told not to go looking for one, or the macOS build fails instead of
-          # producing an unsigned app.
+          # Signing and notarisation are optional; each block above drops these
+          # entirely unless a real value was supplied.
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-          CSC_IDENTITY_AUTO_DISCOVERY: ${{ secrets.CSC_LINK != '' }}
-          # Notarisation, also optional; skipped unless all three are set.
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
