@@ -24,17 +24,27 @@ const sleepDefault = (ms, signal) =>
  *     so giving White 30 minutes requires Black's token, and vice versa. Both
  *     players must therefore have authorised the app.
  *  2. Lichess clamps every add-time call to 60 seconds server-side and still
- *     answers 200 OK. A 30-minute bonus is 30 sequential calls, paced to stay
- *     inside the API rate limit.
+ *     answers 200 OK. A 30-minute bonus is 30 calls, paced to stay inside the
+ *     API rate limit.
+ *
+ * Those two facts together give the delivery its shape. Because add-time
+ * credits the *opponent*, White's bonus is paid with Black's token and Black's
+ * with White's: the two colours never share a rate-limit bucket, so they are
+ * delivered on independent lanes that run concurrently. Within a lane the
+ * calls stay strictly serial — Lichess asks for one request at a time per
+ * token. A both-players bonus therefore costs one delivery window, not two.
  *
  * Delivery is idempotent and resumable: progress is recorded per
  * (colour, move) key after every single chunk, so a crash mid-bonus resumes
  * where it left off instead of double-paying.
  */
 export class Arbiter {
-  /** Pending deliveries, processed strictly one at a time. */
-  #queue = [];
-  #pumping = false;
+  /**
+   * Pending deliveries, keyed by the colour whose token pays for them.
+   * Each lane is drained strictly one call at a time; separate lanes run
+   * concurrently because they spend different tokens.
+   */
+  #lanes = new Map();
   /**
    * Keys currently being delivered. A delivery is off the queue but not yet
    * `done` for the ~15s it takes to make 30 calls, and every one of those
@@ -53,7 +63,7 @@ export class Arbiter {
    * @param {() => void} opts.onChange      called whenever `record` changes
    * @param {number} [opts.intervalMs]      pacing between add-time calls
    */
-  constructor({ client, gameId, spec, seats, record, onChange, intervalMs = 400, sleep = sleepDefault }) {
+  constructor({ client, gameId, spec, seats, record, onChange, intervalMs = 200, sleep = sleepDefault }) {
     this.client = client;
     this.gameId = gameId;
     this.spec = spec;
@@ -74,6 +84,16 @@ export class Arbiter {
   get deliveries() {
     this.record.deliveries ??= {};
     return this.record.deliveries;
+  }
+
+  /** The lane that pays `giver`'s token, created on first use. */
+  #lane(giver) {
+    let lane = this.#lanes.get(giver);
+    if (!lane) {
+      lane = { queue: [], pumping: false };
+      this.#lanes.set(giver, lane);
+    }
+    return lane;
   }
 
   /** Token belonging to the player of `color`. */
@@ -256,28 +276,34 @@ export class Arbiter {
         reason: `move ${due.afterMove}`,
       });
     }
-    this.#startPump();
+    this.#startPumps();
   }
 
   /** Manually give a player extra time outside the schedule. */
   requestTopUp(color, seconds, reason = 'manual top-up') {
     const key = `${color}:manual:${Date.now()}`;
     this.#enqueue({ key, color, target: seconds, reason });
-    this.#startPump();
+    this.#startPumps();
     return key;
   }
 
   /**
-   * Kick the queue without blocking the stream reader. Deliveries take tens of
-   * seconds; the stream must keep flowing meanwhile so clock observations and
-   * game-over detection stay live.
+   * Kick every lane that has work, without blocking the stream reader.
+   * Deliveries take tens of seconds; the stream must keep flowing meanwhile so
+   * clock observations and game-over detection stay live.
    */
-  #startPump() {
-    this.#pump().catch((err) => this.#note('error', `Delivery queue crashed: ${err.message}`));
+  #startPumps() {
+    for (const [giver, lane] of this.#lanes) {
+      if (lane.pumping || lane.queue.length === 0) continue;
+      this.#pump(lane).catch((err) => this.#note('error', `Delivery queue crashed (${giver} token): ${err.message}`));
+    }
   }
 
   #enqueue(job) {
-    if (this.#inFlight.has(job.key) || this.#queue.some((queued) => queued.key === job.key)) return;
+    // The giver spends the token, so it picks the lane: a White bonus is paid
+    // by Black and queues behind Black's other calls, not behind White's.
+    const lane = this.#lane(opposite(job.color));
+    if (this.#inFlight.has(job.key) || lane.queue.some((queued) => queued.key === job.key)) return;
 
     const rec = (this.deliveries[job.key] ??= {
       color: job.color,
@@ -291,17 +317,20 @@ export class Arbiter {
       error: null,
     });
     if (rec.done) return;
-    this.#queue.push(job);
+    lane.queue.push(job);
     this.#note('info', `Bonus owed: ${job.color} +${job.target}s (${job.reason})`, { key: job.key });
   }
 
-  /** Process the queue one delivery at a time — never parallel API calls. */
-  async #pump() {
-    if (this.#pumping) return;
-    this.#pumping = true;
+  /**
+   * Drain one lane, a single delivery at a time — never parallel calls on the
+   * same token. Other lanes pump concurrently; they spend a different one.
+   */
+  async #pump(lane) {
+    if (lane.pumping) return;
+    lane.pumping = true;
     try {
-      while (this.#queue.length > 0 && !this.finished) {
-        const job = this.#queue.shift();
+      while (lane.queue.length > 0 && !this.finished) {
+        const job = lane.queue.shift();
         this.#inFlight.add(job.key);
         try {
           await this.#deliver(job);
@@ -317,7 +346,7 @@ export class Arbiter {
         }
       }
     } finally {
-      this.#pumping = false;
+      lane.pumping = false;
     }
   }
 

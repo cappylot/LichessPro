@@ -177,6 +177,26 @@ describe('Arbiter bonus delivery', () => {
     assert.equal(h.fake.addTimeCalls.filter((c) => c.receiver === 'black').length, 30);
   });
 
+  test('pays both colours concurrently, since each is paid by a different token', async () => {
+    // Real pacing, so a serial queue would be plainly visible in the ordering.
+    const h = await harness({ plies: 100, intervalMs: 25, sleep: realSleep });
+    after(h.stop);
+
+    await waitFor(
+      () => h.record.deliveries?.['white:40']?.done && h.record.deliveries?.['black:40']?.done,
+      { label: 'both bonuses', timeout: 10_000 },
+    );
+
+    // One shared queue would put all 30 of one colour's calls before the first
+    // of the other's. Independent lanes interleave from the very start.
+    const openers = h.fake.addTimeCalls.slice(0, 10).map((c) => c.receiver);
+    assert.ok(openers.includes('white'), 'White is being paid within the first ten calls');
+    assert.ok(openers.includes('black'), 'Black is being paid within the first ten calls');
+
+    assert.equal(h.fake.addTimeCalls.filter((c) => c.receiver === 'white').length, 30);
+    assert.equal(h.fake.addTimeCalls.filter((c) => c.receiver === 'black').length, 30);
+  });
+
   test('retries through rate limiting without losing time', async () => {
     const h = await harness({ plies: 78 });
     after(h.stop);

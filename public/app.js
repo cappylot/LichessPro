@@ -7,7 +7,8 @@
  *
  * The match page builds its DOM once per phase and then PATCHES it in place.
  * That matters: during a bonus delivery the server pushes an update after every
- * one of the 30 add-time calls, roughly every 400ms. Rebuilding the page on each
+ * one of the 30 add-time calls, roughly every 200ms — and twice that when both
+ * colours are being paid at once. Rebuilding the page on each
  * one would reset scroll positions, close open sections, wipe anything being
  * typed, and make transitions impossible.
  */

@@ -91,7 +91,7 @@ export function loadConfig(overrides = {}, env = process.env) {
     oauthClientId: overrides.oauthClientId ?? env.OAUTH_CLIENT_ID ?? 'lichesspro',
     lichessHost: trimSlash(overrides.lichessHost ?? env.LICHESS_HOST ?? 'https://lichess.org'),
     dataDir: path.resolve(overrides.dataDir ?? env.DATA_DIR ?? './.data'),
-    addTimeIntervalMs: overrides.addTimeIntervalMs ?? int('ADD_TIME_INTERVAL_MS', env.ADD_TIME_INTERVAL_MS, 400),
+    addTimeIntervalMs: overrides.addTimeIntervalMs ?? int('ADD_TIME_INTERVAL_MS', env.ADD_TIME_INTERVAL_MS, 200),
 
     // In the desktop app the OAuth round trip finishes in the system browser,
     // so the callback shows a "you can close this" page rather than redirecting
