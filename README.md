@@ -105,7 +105,9 @@ Everything below was checked against the
 
 ## Running it
 
-Requires **Node.js 20+**. There are **no dependencies** — nothing to install.
+Requires **Node.js 20+** on the machine that hosts it. There are **no
+dependencies** — nothing to `npm install`. Works the same on Windows, macOS and
+Linux.
 
 ```bash
 git clone <this repo>
@@ -115,16 +117,28 @@ npm start
 
 Then open <http://localhost:8080>.
 
-To play with someone not on your machine, the app must be reachable at a URL both
-of you can open, and `PUBLIC_URL` must match it exactly (it is used to build the
-OAuth redirect URI):
+**Only the host needs Node.** The opponent needs a browser and a Lichess account
+and nothing else, on any platform.
 
-```bash
-PUBLIC_URL=https://chess.example.com PORT=8080 npm start
+### Configuration
+
+Copy `.env.example` to `.env` and edit it. The file is read at startup on every
+platform, so there is no need for shell-specific environment variable syntax:
+
+```ini
+PORT=8080
+PUBLIC_URL=https://chess.example.com
 ```
 
-Copy `.env.example` to `.env` for the full list of settings. There is no Lichess
-app registration step — Lichess accepts any `client_id`.
+`PUBLIC_URL` must exactly match the address players type, because it builds the
+OAuth `redirect_uri`. Real environment variables override the file if you prefer
+to set them that way:
+
+```bash
+PUBLIC_URL=https://chess.example.com npm start   # macOS / Linux only
+```
+
+There is no Lichess app registration step — Lichess accepts any `client_id`.
 
 ### Playing without a public URL
 
@@ -188,8 +202,11 @@ short is surfaced in the UI, and there is a manual top-up control as an escape
 hatch.
 
 **Tokens never reach the browser.** OAuth access tokens live only on the server
-and in `.data/matches.json` (mode `0600`, gitignored). The browser gets an opaque
-cookie that proves seat ownership and nothing else.
+and in `.data/matches.json` (gitignored). The browser gets an opaque cookie that
+proves seat ownership and nothing else. The file is written with mode `0600` and
+its directory `0700` — but **file modes are not enforced on Windows**, so there
+the file is readable by any account on the machine. Treat `.data/` as secret
+regardless, and delete it when you are done.
 
 ---
 

@@ -1,4 +1,50 @@
+import fs from 'node:fs';
 import path from 'node:path';
+
+/**
+ * Parse the contents of a `.env` file.
+ *
+ * Exists so settings can be changed the same way on every platform. Prefixing a
+ * command with `PUBLIC_URL=...` is a POSIX shell feature that does not work in
+ * Windows cmd or PowerShell, which would leave Windows users with no way to set
+ * a public URL short of editing source.
+ *
+ * Deliberately small: `KEY=value`, `#` comments, optional surrounding quotes.
+ * No variable interpolation, no multi-line values.
+ */
+export function parseEnv(text) {
+  const out = {};
+  for (const line of String(text).split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+
+    const eq = trimmed.indexOf('=');
+    if (eq < 1) continue;
+
+    const key = trimmed.slice(0, eq).trim();
+    let value = trimmed.slice(eq + 1).trim();
+    const quoted = value.length >= 2 && (value[0] === '"' || value[0] === "'") && value.at(-1) === value[0];
+    if (quoted) value = value.slice(1, -1);
+
+    if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) out[key] = value;
+  }
+  return out;
+}
+
+/** Apply a `.env` file if present. Real environment variables win. */
+function loadEnvFile(file = process.env.ENV_FILE || '.env') {
+  let text;
+  try {
+    text = fs.readFileSync(path.resolve(file), 'utf8');
+  } catch {
+    return; // no .env is the normal case
+  }
+  for (const [key, value] of Object.entries(parseEnv(text))) {
+    if (process.env[key] === undefined) process.env[key] = value;
+  }
+}
+
+loadEnvFile();
 
 function int(name, fallback) {
   const raw = process.env[name];
